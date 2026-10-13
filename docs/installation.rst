@@ -131,7 +131,7 @@ Further resources
 =================
 
 * Full documentation and examples: `Full documentation <https://pythermalcomfort.readthedocs.io/en/latest>`_
-* Contribution guidelines: see `Contributing Instructions <https://pythermalcomfort.readthedocs.io/en/latest/contributing.html>`_ in the project root
+* Contribution guidelines: see `Contributing Instructions <https://pythermalcomfort.readthedocs.io/en/latest/contributing/index.html>`_ in the project root
 
 .. _using-from-r:
 
