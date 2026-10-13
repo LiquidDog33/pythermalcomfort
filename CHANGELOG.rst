@@ -4,6 +4,12 @@ Changelog
 Unreleased
 ----------
 
+* Added ``SummaryPlot.set_regions(preset="pmv_iso")`` and ``preset="pmv_ashrae"``
+  for seven-category PMV thermal sensation summaries, preserving each model's
+  boundary inclusion and finite classification limits. Presets default to the
+  ``pmv`` column and existing palette, allow presentation overrides, and accept
+  SI/IP units for dimensionless PMV. Custom thresholds retain their behavior.
+
 * Dropped support for Python 3.10, which reached end of life in October 2026.
   pythermalcomfort now requires Python 3.11 or later. Users on Python 3.10 keep
   getting 4.6.2 from pip.

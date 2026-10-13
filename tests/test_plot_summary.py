@@ -37,6 +37,51 @@ def _new_summary(pmv_df: pd.DataFrame) -> SummaryPlot:
 
 
 @pytest.mark.parametrize(
+    ("preset", "expected"),
+    [("pmv_iso", [0, 0, 0, 0, 100, 0, 0]), ("pmv_ashrae", [0, 0, 0, 100, 0, 0, 0])],
+)
+def test_pmv_presets_distinguish_thermal_sensation_at_boundary(preset, expected):
+    result = SummaryPlot(pd.DataFrame({"pmv": [0.5]})).set_regions(preset=preset).plot()
+    assert result.percentages.index.tolist() == [
+        "Cold",
+        "Cool",
+        "Slightly Cool",
+        "Neutral",
+        "Slightly Warm",
+        "Warm",
+        "Hot",
+    ]
+    assert result.percentages.tolist() == expected
+    assert isinstance(result, SummaryPlotResult)
+
+
+@pytest.mark.parametrize(
+    ("preset", "value"),
+    [("pmv_iso", 10.0), ("pmv_iso", 10.001), ("pmv_ashrae", 10.001)],
+)
+def test_pmv_presets_reject_unmapped_samples(preset, value):
+    with pytest.raises(ValueError, match="Filter.*percentages"):
+        SummaryPlot(pd.DataFrame({"pmv": [value]})).set_regions(preset=preset)
+
+
+@pytest.mark.parametrize("units", ["SI", "si", "IP", "ip"])
+def test_pmv_preset_units_do_not_change_dimensionless_values(units):
+    result = (
+        SummaryPlot(pd.DataFrame({"pmv": [0.5]}))
+        .set_regions(preset=" PMV_ASHRAE ", units=units)
+        .plot()
+    )
+    assert result.percentages["Neutral"] == 100
+
+
+def test_region_units_are_only_valid_in_preset_mode(pmv_df):
+    with pytest.raises(ValueError, match="SI.*IP"):
+        SummaryPlot(pmv_df).set_regions(preset="pmv_iso", units="kelvin")
+    with pytest.raises(ValueError, match="units.*preset"):
+        SummaryPlot(pmv_df).set_regions(output="pmv", thresholds=[0], units="IP")
+
+
+@pytest.mark.parametrize(
     ("n_regions", "expected"),
     [
         (2, ["#86AEC8", "#D88B7B"]),
@@ -450,3 +495,152 @@ def test_set_categories_adaptive_np_select_recipe_end_to_end() -> None:
         "80% Acceptability": 0.0,
         "Outside": 50.0,
     }
+
+
+@pytest.mark.parametrize("preset", ["pmv_iso", "pmv_ashrae"])
+@pytest.mark.parametrize(
+    ("boundary", "lower", "upper"),
+    [
+        (-2.5, "Cold", "Cool"),
+        (-1.5, "Cool", "Slightly Cool"),
+        (-0.5, "Slightly Cool", "Neutral"),
+        (0.5, "Neutral", "Slightly Warm"),
+        (1.5, "Slightly Warm", "Warm"),
+        (2.5, "Warm", "Hot"),
+    ],
+)
+def test_pmv_presets_classify_each_boundary_without_rounding(
+    preset, boundary, lower, upper
+):
+    # A tiny offset must remain on its own side, even if PMV rounds to the boundary.
+    result = (
+        SummaryPlot(pd.DataFrame({"pmv": [boundary - 1e-8, boundary, boundary + 1e-8]}))
+        .set_regions(preset=preset)
+        .plot()
+    )
+    expected_lower = 33.3 if preset == "pmv_iso" else 66.7
+    assert result.percentages[lower] == expected_lower
+    assert result.percentages[upper] == 100 - expected_lower
+    assert (result.percentages == 0).sum() == 5
+
+
+@pytest.mark.parametrize(
+    ("preset", "value"),
+    [("pmv_iso", 9.999999), ("pmv_ashrae", 10.0), ("pmv_iso", -100)],
+)
+def test_pmv_presets_accept_mapped_extreme_values(preset, value):
+    result = (
+        SummaryPlot(pd.DataFrame({"pmv": [value]})).set_regions(preset=preset).plot()
+    )
+    assert result.percentages["Cold" if value < 0 else "Hot"] == 100
+    assert len(result.ax.patches) == 7
+
+
+@pytest.mark.parametrize(
+    "value", [float("nan"), float("inf"), -float("inf"), "bad", None]
+)
+def test_pmv_presets_reject_invalid_samples_with_filtering_guidance(value):
+    with pytest.raises(ValueError, match="Filter.*percentages"):
+        SummaryPlot(pd.DataFrame({"pmv": [0, value]})).set_regions(preset="pmv_iso")
+
+
+@pytest.mark.parametrize("preset", ["pmv", "pmv_iss", "utci", ""])
+def test_unknown_presets_list_supported_identifiers(pmv_df, preset):
+    with pytest.raises(ValueError, match="Supported presets: pmv_iso, pmv_ashrae"):
+        SummaryPlot(pmv_df).set_regions(preset=preset)
+
+
+def test_presets_validate_configuration_and_default_column(pmv_df):
+    with pytest.raises(ValueError, match="explicit thresholds"):
+        SummaryPlot(pmv_df).set_regions(preset="pmv_iso", thresholds=[0])
+    with pytest.raises(ValueError, match="'pmv'.*not found"):
+        SummaryPlot(pd.DataFrame({"other": [0]})).set_regions(preset="pmv_iso")
+    with pytest.raises(TypeError, match="preset must be a string"):
+        SummaryPlot(pmv_df).set_regions(preset=1)
+    with pytest.raises(TypeError, match="output and thresholds are required"):
+        SummaryPlot(pmv_df).set_regions(output="pmv")
+    with pytest.raises(TypeError, match="output and thresholds are required"):
+        SummaryPlot(pmv_df).set_regions(thresholds=[0])
+    for overrides, message in [
+        ({"labels": ["one"]}, "labels must have length 7"),
+        ({"colors": ["red"]}, "colors must have length 7"),
+        ({"colors": ["invalid"] * 7}, "Invalid color"),
+        ({"output": 5}, "output must be a string"),
+        ({"output": "missing"}, "not found"),
+        ({"units": 1}, "SI.*IP"),
+    ]:
+        with pytest.raises((TypeError, ValueError), match=message):
+            SummaryPlot(pmv_df).set_regions(preset="pmv_iso", **overrides)
+
+
+def test_preset_presentation_overrides_do_not_change_defaults():
+    from matplotlib.colors import to_rgba
+
+    df = pd.DataFrame({"other": [0.5]})
+    labels = ["one", "two", "three", "four", "five", "six", "seven"]
+    colors = ["red", "orange", "yellow", "green", "blue", "purple", "black"]
+    builder = SummaryPlot(df)
+    assert (
+        builder.set_regions(
+            preset="pmv_iso", output="other", labels=labels, colors=colors
+        )
+        is builder
+    )
+    result = builder.plot()
+    assert result.percentages.index.tolist() == labels
+    assert result.percentages.tolist() == [0, 0, 0, 0, 100, 0, 0]
+    assert [p.get_facecolor() for p in result.ax.patches] == [
+        to_rgba(c) for c in colors
+    ]
+    assert [t.get_text() for t in result.legend.get_texts()] == labels
+    labels[4] = "mutated"
+    colors[4] = "white"
+    assert builder.plot().percentages.index[4] == "five"
+    default = builder.set_regions(preset="pmv_iso", output="other").plot()
+    assert default.percentages.index[4] == "Slightly Warm"
+    assert [p.get_facecolor() for p in default.ax.patches] == [
+        to_rgba(c)
+        for c in [
+            "#527F98",
+            "#86AEC8",
+            "#C7DCE6",
+            "#F1F3F2",
+            "#EBCBC3",
+            "#D88B7B",
+            "#B85F55",
+        ]
+    ]
+    empty_labels = builder.set_regions(
+        preset="pmv_iso", output="other", labels=[]
+    ).plot(legend=False)
+    assert empty_labels.percentages.index.tolist() == [""] * 7
+
+
+def test_presets_custom_thresholds_and_categories_replace_each_other():
+    builder = SummaryPlot(pd.DataFrame({"pmv": [0.5]}))
+    assert builder.set_regions(preset="pmv_ashrae").plot().percentages["Neutral"] == 100
+    assert (
+        builder.set_regions(preset="pmv_iso").plot().percentages["Slightly Warm"] == 100
+    )
+    custom = builder.set_regions(
+        output="pmv", thresholds=[0.5], labels=["below", "above"]
+    ).plot()
+    assert custom.percentages.tolist() == [0, 100]
+    assert (
+        builder.set_categories(["original"], labels=["original"], colors=["red"])
+        is builder
+    )
+    assert builder.plot().percentages.to_dict() == {"original": 100}
+    assert builder.set_regions(preset="pmv_ashrae").plot().percentages["Neutral"] == 100
+    builder.set_categories(["original"], labels=["original"], colors=["red"])
+    assert builder.set_regions(
+        output="pmv", thresholds=[0]
+    ).plot().percentages.tolist() == [0, 100]
+
+
+def test_preset_validates_samples_again_when_dataframe_is_changed():
+    df = pd.DataFrame({"pmv": [0]})
+    builder = SummaryPlot(df).set_regions(preset="pmv_iso")
+    df.loc[0, "pmv"] = 10
+    with pytest.raises(ValueError, match="unmapped"):
+        builder.plot()

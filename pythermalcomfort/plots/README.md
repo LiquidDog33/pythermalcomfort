@@ -39,6 +39,22 @@ summary = (
 plt.show()
 ```
 
+## PMV summary presets
+
+For seven-category PMV thermal sensation summaries, use
+`SummaryPlot(df).set_regions(preset="pmv_iso").plot()` or `preset="pmv_ashrae"`.
+Both default to the `pmv` column. Override `output`, `labels`, and `colors` as needed;
+`labels=[]` hides labels. Names ignore case and surrounding whitespace. ISO includes
+left edges; ASHRAE includes right edges, so PMV 0.5 is Slightly Warm in ISO and
+Neutral in ASHRAE. Neutral sensation alone does not establish standard compliance.
+ISO rejects PMV >= 10 and ASHRAE rejects PMV > 10; these are classification limits,
+not environmental applicability checks. Filter invalid and unmapped rows explicitly:
+percentages describe the retained valid samples. Presets add no rounding. Use
+`set_categories()` with returned model categories to preserve original assignments.
+`units="SI"` (default) or `"IP"` leaves PMV unchanged and is only accepted with a
+preset; custom thresholds are not converted. Presets cannot be combined with explicit
+thresholds. See `examples/plot_summary_pmv_presets.py` for a runnable example.
+
 ## How `ThresholdPlot` draws its boundaries
 
 Every boundary is solved by bisection, one row of the plot at a time: where the

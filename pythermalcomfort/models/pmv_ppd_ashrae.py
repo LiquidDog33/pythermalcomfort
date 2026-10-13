@@ -3,6 +3,7 @@ from __future__ import annotations
 import numpy as np
 
 from pythermalcomfort._internal.ashrae55 import _check_ashrae55_compliance
+from pythermalcomfort._internal.classifications import PMV_ASHRAE_CLASSIFICATION
 from pythermalcomfort._internal.validation import _finalize_scalar_or_array, _mapping
 from pythermalcomfort.classes_input import NumericInput, PMVPPDInputs
 from pythermalcomfort.classes_return import PMVPPDAshrae
@@ -224,19 +225,13 @@ def pmv_ppd_ashrae(
         pmv_array = np.round(pmv_array, 2)
         ppd_array = np.round(ppd_array, 1)
 
-    thermal_sensation = {
-        -2.5: "Cold",
-        -1.5: "Cool",
-        -0.5: "Slightly Cool",
-        0.5: "Neutral",
-        1.5: "Slightly Warm",
-        2.5: "Warm",
-        10: "Hot",
-    }
-
     return PMVPPDAshrae(
         pmv=pmv_array,
         ppd=ppd_array,
-        tsv=_mapping(pmv_array, thermal_sensation),
+        tsv=_mapping(
+            value=pmv_array,
+            map_dictionary=PMV_ASHRAE_CLASSIFICATION.mapping,
+            right=PMV_ASHRAE_CLASSIFICATION.right,
+        ),
         compliance=compliance_array,
     )

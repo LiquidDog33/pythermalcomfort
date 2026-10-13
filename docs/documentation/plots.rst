@@ -69,8 +69,60 @@ Threshold Plot
 Summary Plot
 ------------
 
+PMV region presets
+~~~~~~~~~~~~~~~~~~
+
+Use ``set_regions(preset="pmv_iso")`` or ``set_regions(preset="pmv_ashrae")``
+to summarize the ``pmv`` column without entering thresholds or labels. Both use
+seven thermal sensation categories: Cold, Cool, Slightly Cool, Neutral, Slightly
+Warm, Warm, and Hot. Sensation is distinct from comfort-standard compliance.
+
+The boundaries are -2.5, -1.5, -0.5, 0.5, 1.5, and 2.5. ISO includes the left
+edge; ASHRAE includes the right edge. For example, PMV 0.5 is Slightly Warm in
+ISO and Neutral in ASHRAE. ISO rejects values >= 10 and ASHRAE rejects values
+> 10: these are output classification limits, not environmental applicability
+checks or extra regions. Supplied values are classified without added rounding.
+
+Names ignore case and surrounding whitespace. Override the default column with
+``output``, and presentation with ``labels`` and ``colors`` (seven entries each;
+``labels=[]`` suppresses labels). The existing seven-region palette is the default.
+Units default to SI; ``units="SI"`` and ``units="IP"`` are case insensitive and
+leave dimensionless PMV unchanged. Units are accepted only with a preset.
+Custom ``output``/``thresholds`` calls retain left-closed boundaries and do not
+convert units. A preset cannot be combined with explicit thresholds.
+
+.. code-block:: python
+
+    import numpy as np
+    import pandas as pd
+    from pythermalcomfort.plots.matplotlib import SummaryPlot
+
+    df = pd.DataFrame({"sensation": [-1.0, 0.0, 0.5, 1.0, np.nan]})
+    # Filter explicitly; percentages describe the retained valid samples only.
+    df = df.loc[np.isfinite(df["sensation"]) & (df["sensation"] < 10)]
+    summary = SummaryPlot(df).set_regions(
+        preset="pmv_iso",
+        output="sensation",
+        labels=["Cold", "Cool", "Slightly Cool", "Neutral",
+                "Slightly Warm", "Warm", "Hot"],
+        colors=["#527F98", "#86AEC8", "#C7DCE6", "#F1F3F2",
+                "#EBCBC3", "#D88B7B", "#B85F55"],
+    ).plot(title="ISO PMV thermal sensation")
+
+Nonnumeric, missing, nonfinite, and unmapped samples raise errors; rows are never
+automatically dropped. Clean nonnumeric data before filtering, for example with
+``pd.to_numeric(df["sensation"], errors="coerce")``. A missing output column also
+raises an error without searching for another numeric column.
+
+When original model category assignments must be retained, use
+``set_categories(result.tsv, labels=..., colors=...)`` with the same retained
+rows. A model's rounding and classification order can affect assignments, so a
+numeric summary cannot generally recover categories from rounded output.
+Calling ``set_regions`` or ``set_categories`` replaces the preceding configuration.
+A runnable model example is included as ``examples/plot_summary_pmv_presets.py``.
+
 .. autoclass:: pythermalcomfort.plots.matplotlib.SummaryPlot
-    :members: __init__, set_regions, plot
+    :members: __init__, set_regions, set_categories, plot
     :member-order: bysource
 
 .. autoclass:: pythermalcomfort.plots.matplotlib.SummaryPlotResult

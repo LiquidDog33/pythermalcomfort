@@ -16,6 +16,11 @@ from matplotlib.figure import Figure
 from matplotlib.legend import Legend
 from matplotlib.patches import Patch
 
+from pythermalcomfort._internal.classifications import (
+    PMV_ASHRAE_CLASSIFICATION,
+    PMV_ISO_CLASSIFICATION,
+    _OutputClassification,
+)
 from pythermalcomfort.plots.matplotlib._base import BasePlot
 from pythermalcomfort.plots.matplotlib._shared import (
     _PYTHERMALCOMFORT_RC,
@@ -26,6 +31,11 @@ from pythermalcomfort.plots.matplotlib._shared import (
 )
 
 # ── result container ───────────────────────────────────────────────────────
+
+_REGION_PRESETS = {
+    "pmv_iso": ("pmv", PMV_ISO_CLASSIFICATION),
+    "pmv_ashrae": ("pmv", PMV_ASHRAE_CLASSIFICATION),
+}
 
 
 @dataclass
@@ -90,7 +100,26 @@ def _validate_output_values(df: pd.DataFrame, output_column: str) -> None:
         invalid_count = int(invalid_mask.sum())
         msg = (
             f"output column '{output_column}' contains {invalid_count} non-numeric, "
-            "non-finite, or missing value(s)."
+            "non-finite, or missing value(s). Filter invalid rows before configuring "
+            "regions; percentages describe the retained valid samples."
+        )
+        raise ValueError(msg)
+
+
+def _validate_preset_values(
+    df: pd.DataFrame, output: str, classification: _OutputClassification
+) -> None:
+    """Reject values beyond the model's finite classification upper bound."""
+    values = pd.to_numeric(df[output], errors="raise")
+    upper_bound = classification.upper_bounds[-1]
+    invalid = values > upper_bound if classification.right else values >= upper_bound
+    if invalid.any():
+        comparison = ">" if classification.right else ">="
+        msg = (
+            f"output column '{output}' contains {int(invalid.sum())} unmapped value(s) "
+            f"({comparison} {upper_bound:g}, the classification upper bound). "
+            "Filter unmapped rows before configuring regions; percentages describe "
+            "the retained valid samples."
         )
         raise ValueError(msg)
 
@@ -104,6 +133,7 @@ def _compute_region_percentages(
     output_column: str,
     levels: Sequence[float],
     region_labels: Sequence[str],
+    right: bool = False,
 ) -> pd.Series:
     """Assign each row to a threshold region and return percentage per region.
 
@@ -115,7 +145,7 @@ def _compute_region_percentages(
     values = pd.to_numeric(df[output_column], errors="raise")
     n_regions = len(levels) + 1
     int_labels = list(range(n_regions))
-    categorized = pd.cut(values, bins=bins, labels=int_labels, right=False)
+    categorized = pd.cut(values, bins=bins, labels=int_labels, right=right)
     result = (
         categorized.value_counts(normalize=True)
         .reindex(int_labels, fill_value=0.0)
@@ -368,8 +398,8 @@ class SummaryPlot(BasePlot):
     Two mutually exclusive ways to configure regions are available — calling
     one clears any configuration set by the other:
 
-    - :meth:`set_regions` — bin one continuous output column against fixed
-      thresholds (e.g. PMV thresholds at -0.5/0.5).
+    - :meth:`set_regions` — bin one continuous output column using a named
+      model preset or custom thresholds (e.g. PMV thresholds at -0.5/0.5).
     - :meth:`set_categories` — summarize an already-classified per-row
       category array, computed however makes sense for the model at hand
       (see :meth:`set_categories` for a worked example with adaptive comfort).
@@ -396,29 +426,45 @@ class SummaryPlot(BasePlot):
         self._categories: np.ndarray | None = None
         self._category_labels: list[str] | None = None
         self._category_colors: list[str] | None = None
+        self._classification: _OutputClassification | None = None
 
     def set_regions(
         self,
         *,
-        output: str,
-        thresholds: Sequence[float],
+        output: str | None = None,
+        thresholds: Sequence[float] | None = None,
         labels: Sequence[str] | None = None,
         colors: Sequence[str] | None = None,
+        preset: str | None = None,
+        units: str | None = None,
     ) -> SummaryPlot:
-        """Set output variable and threshold region configuration.
+        """Configure regions using custom thresholds or a model classification preset.
 
         Parameters
         ----------
-        output : str
-            Name of the DataFrame column to categorize.
-        thresholds : sequence of float
-            Numeric boundary values that divide the output range into regions.
+        output : str, optional
+            Name of the DataFrame column to categorize. Defaults to ``pmv``
+            for either PMV preset; required for custom thresholds.
+        thresholds : sequence of float, optional
+            Numeric boundaries for custom, left-closed regions. Required
+            without a preset; cannot be combined with a preset.
         labels : sequence of str, optional
             Region labels.  Must have length ``len(thresholds) + 1`` when
-            provided.
+            provided. An empty sequence suppresses all region labels.
         colors : sequence of str, optional
             Region colors.  Must have length ``len(thresholds) + 1`` when
-            provided.
+            provided. Presets reuse the existing seven-region palette.
+        preset : str, optional
+            ``pmv_iso`` or ``pmv_ashrae``. Names ignore case and surrounding
+            whitespace. Both classify seven thermal sensation categories:
+            Cold, Cool, Slightly Cool, Neutral, Slightly Warm, Warm, Hot.
+            Their six boundaries are -2.5, -1.5, -0.5, 0.5, 1.5, 2.5.
+            ISO includes the left edge; ASHRAE includes the right edge.
+            Labels and colors can override the preset presentation.
+        units : str, optional
+            Preset data units, ``SI`` (default) or ``IP``, ignoring case.
+            PMV is dimensionless, so either leaves its boundaries unchanged.
+            Only accepted with a preset; custom thresholds are never converted.
 
         Returns
         -------
@@ -428,13 +474,66 @@ class SummaryPlot(BasePlot):
         Raises
         ------
         TypeError
-            If ``output`` is not a string.
+            If ``output`` or ``preset`` is not a string, or custom mode is
+            missing output or thresholds.
         ValueError
             If the output column is missing or has invalid values, or if
-            thresholds/labels/colors are invalid.
+            thresholds/labels/colors, preset name, or units are invalid.
+
+        Notes
+        -----
+        Thermal sensation is distinct from comfort-standard compliance. Presets
+        classify supplied values directly, without rounding or checking environmental
+        input applicability. ISO rejects PMV >= 10; ASHRAE rejects PMV > 10, matching
+        the models' finite classification limits. These limits add no plotted region.
+
+        Filter nonnumeric, missing, nonfinite, and unmapped samples before calling
+        this method. No rows are silently dropped: percentages describe the retained
+        valid sample population. Use :meth:`set_categories` with model-returned
+        categories when the original assignments must be preserved, since a model's
+        rounding and classification order can affect categories.
+
+        Examples
+        --------
+        .. code-block:: python
+
+            import pandas as pd
+            from pythermalcomfort.plots.matplotlib import SummaryPlot
+
+            df = pd.DataFrame({"pmv": [-1.0, 0.0, 0.5, 1.0]})
+            result = SummaryPlot(df).set_regions(preset="pmv_iso").plot()
+            print(result.percentages["Slightly Warm"])  # 50.0
         """
+        classification = None
+        if preset is not None:
+            if not isinstance(preset, str):
+                raise TypeError("preset must be a string.")
+            name = preset.strip().lower()
+            if name not in _REGION_PRESETS:
+                msg = f"Unknown preset '{preset}'. Supported presets: {', '.join(_REGION_PRESETS)}."
+                raise ValueError(msg)
+            if thresholds is not None:
+                raise ValueError("preset cannot be combined with explicit thresholds.")
+            if units is not None and (
+                not isinstance(units, str) or units.upper() not in {"SI", "IP"}
+            ):
+                raise ValueError("units must be 'SI' or 'IP' for a preset.")
+            default_output, classification = _REGION_PRESETS[name]
+            output = default_output if output is None else output
+            thresholds = classification.upper_bounds[:-1]
+            labels = classification.labels if labels is None else labels
+        else:
+            if units is not None:
+                raise ValueError("units can only be supplied with a preset.")
+            if output is None or thresholds is None:
+                raise TypeError("output and thresholds are required without a preset.")
+
         output_name = _validate_output_column(self._df, output)
         _validate_output_values(self._df, output_name)
+        if classification is not None:
+            _validate_preset_values(
+                df=self._df, output=output_name, classification=classification
+            )
         self._region_config = _configure_regions(
             output=output_name,
             thresholds=thresholds,
@@ -444,6 +543,7 @@ class SummaryPlot(BasePlot):
         self._categories = None
         self._category_labels = None
         self._category_colors = None
+        self._classification = classification
         return self
 
     def set_categories(
@@ -547,6 +647,7 @@ class SummaryPlot(BasePlot):
         self._category_labels = label_list
         self._category_colors = color_list
         self._region_config = None
+        self._classification = None
         return self
 
     def plot(
@@ -600,11 +701,19 @@ class SummaryPlot(BasePlot):
                 labels, colors = self._category_labels, self._category_colors
             elif self._region_config is not None:
                 rc = self._region_config
+                if self._classification is not None:
+                    _validate_output_values(self._df, rc.output_name)
+                    _validate_preset_values(
+                        df=self._df,
+                        output=rc.output_name,
+                        classification=self._classification,
+                    )
                 percentages = _compute_region_percentages(
                     self._df,
                     output_column=rc.output_name,
                     levels=rc.thresholds,
                     region_labels=rc.labels,
+                    right=self._classification.right if self._classification else False,
                 )
                 labels, colors = rc.labels, rc.colors
             else:
