@@ -33,3 +33,19 @@ PMV_ISO_CLASSIFICATION = _OutputClassification(
 PMV_ASHRAE_CLASSIFICATION = _OutputClassification(
     upper_bounds=_PMV_BOUNDS, labels=_PMV_LABELS, right=True
 )
+UTCI_CLASSIFICATION = _OutputClassification(
+    upper_bounds=(-40.0, -27.0, -13.0, 0.0, 9.0, 26.0, 32.0, 38.0, 46.0, 1000.0),
+    labels=(
+        "extreme cold stress",
+        "very strong cold stress",
+        "strong cold stress",
+        "moderate cold stress",
+        "slight cold stress",
+        "no thermal stress",
+        "moderate heat stress",
+        "strong heat stress",
+        "very strong heat stress",
+        "extreme heat stress",
+    ),
+    right=True,
+)

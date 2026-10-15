@@ -55,6 +55,28 @@ percentages describe the retained valid samples. Presets add no rounding. Use
 preset; custom thresholds are not converted. Presets cannot be combined with explicit
 thresholds. See `examples/plot_summary_pmv_presets.py` for a runnable example.
 
+## UTCI summary preset
+
+`SummaryPlot(df).set_regions(preset="utci").plot()` defaults to the `utci` column
+and Celsius data. It provides all ten thermal stress categories with right-closed
+boundaries at -40, -27, -13, 0, 9, 26, 32, 38, and 46 °C. Exactly 26 °C belongs
+to no thermal stress. Use `units="IP"` for Fahrenheit data: only thresholds and
+the classification limit convert; supply data in the declared units. Values above
+1000 °C (1832 °F) are unmapped and rejected. Filter invalid samples explicitly;
+percentages describe retained valid samples. These limits do not validate the
+original environmental inputs.
+
+Override `output`, `labels`, and `colors` using ten entries, or `labels=[]` to hide
+labels. The existing ten-region palette is reused. Names and units ignore case;
+preset names also ignore surrounding whitespace. Existing preset conflict and
+configuration switching rules apply.
+
+Presets add no rounding. UTCI classifies separately rounded Celsius values, so
+26.049 and 26.051 °C can display as the same 78.9 °F while their original model
+categories differ. Use `set_categories(result.stress_category, ...)` to retain
+those assignments. See `examples/plot_summary_utci_presets.py` for SI/IP plots,
+filtering, presentation overrides, and original category summaries.
+
 ## How `ThresholdPlot` draws its boundaries
 
 Every boundary is solved by bisection, one row of the plot at a time: where the

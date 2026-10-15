@@ -19,6 +19,7 @@ from matplotlib.patches import Patch
 from pythermalcomfort._internal.classifications import (
     PMV_ASHRAE_CLASSIFICATION,
     PMV_ISO_CLASSIFICATION,
+    UTCI_CLASSIFICATION,
     _OutputClassification,
 )
 from pythermalcomfort.plots.matplotlib._base import BasePlot
@@ -29,12 +30,14 @@ from pythermalcomfort.plots.matplotlib._shared import (
     _is_light_color,
     _PlotDefaults,
 )
+from pythermalcomfort.utilities import units_converter
 
 # ── result container ───────────────────────────────────────────────────────
 
 _REGION_PRESETS = {
     "pmv_iso": ("pmv", PMV_ISO_CLASSIFICATION),
     "pmv_ashrae": ("pmv", PMV_ASHRAE_CLASSIFICATION),
+    "utci": ("utci", UTCI_CLASSIFICATION),
 }
 
 
@@ -444,7 +447,8 @@ class SummaryPlot(BasePlot):
         ----------
         output : str, optional
             Name of the DataFrame column to categorize. Defaults to ``pmv``
-            for either PMV preset; required for custom thresholds.
+            for either PMV preset, or ``utci`` for the UTCI preset;
+            required for custom thresholds.
         thresholds : sequence of float, optional
             Numeric boundaries for custom, left-closed regions. Required
             without a preset; cannot be combined with a preset.
@@ -453,17 +457,21 @@ class SummaryPlot(BasePlot):
             provided. An empty sequence suppresses all region labels.
         colors : sequence of str, optional
             Region colors.  Must have length ``len(thresholds) + 1`` when
-            provided. Presets reuse the existing seven-region palette.
+            provided. Presets reuse the existing palette for their region count.
         preset : str, optional
-            ``pmv_iso`` or ``pmv_ashrae``. Names ignore case and surrounding
-            whitespace. Both classify seven thermal sensation categories:
+            ``pmv_iso``, ``pmv_ashrae``, or ``utci``. Names ignore case and surrounding
+            whitespace. The PMV presets classify seven thermal sensation categories:
             Cold, Cool, Slightly Cool, Neutral, Slightly Warm, Warm, Hot.
             Their six boundaries are -2.5, -1.5, -0.5, 0.5, 1.5, 2.5.
             ISO includes the left edge; ASHRAE includes the right edge.
+            UTCI has ten thermal stress categories with right-closed Celsius
+            boundaries -40, -27, -13, 0, 9, 26, 32, 38, 46.
             Labels and colors can override the preset presentation.
         units : str, optional
             Preset data units, ``SI`` (default) or ``IP``, ignoring case.
             PMV is dimensionless, so either leaves its boundaries unchanged.
+            UTCI uses Celsius for SI and Fahrenheit for IP: thresholds and the
+            upper classification bound are converted, never the supplied data.
             Only accepted with a preset; custom thresholds are never converted.
 
         Returns
@@ -485,13 +493,16 @@ class SummaryPlot(BasePlot):
         Thermal sensation is distinct from comfort-standard compliance. Presets
         classify supplied values directly, without rounding or checking environmental
         input applicability. ISO rejects PMV >= 10; ASHRAE rejects PMV > 10, matching
-        the models' finite classification limits. These limits add no plotted region.
+        the models' finite classification limits. UTCI rejects values > 1000 degrees
+        Celsius (1832 degrees Fahrenheit). These limits add no plotted region.
 
         Filter nonnumeric, missing, nonfinite, and unmapped samples before calling
         this method. No rows are silently dropped: percentages describe the retained
         valid sample population. Use :meth:`set_categories` with model-returned
         categories when the original assignments must be preserved, since a model's
-        rounding and classification order can affect categories.
+        rounding and classification order can affect categories. UTCI classifies
+        separately rounded Celsius values; rounded Fahrenheit values cannot always
+        recover the original categories.
 
         Examples
         --------
@@ -519,6 +530,15 @@ class SummaryPlot(BasePlot):
             ):
                 raise ValueError("units must be 'SI' or 'IP' for a preset.")
             default_output, classification = _REGION_PRESETS[name]
+            if name == "utci" and units is not None and units.upper() == "IP":
+                classification = _OutputClassification(
+                    upper_bounds=tuple(
+                        units_converter(from_units="SI", tmp=bound)[0]
+                        for bound in classification.upper_bounds
+                    ),
+                    labels=classification.labels,
+                    right=classification.right,
+                )
             output = default_output if output is None else output
             thresholds = classification.upper_bounds[:-1]
             labels = classification.labels if labels is None else labels

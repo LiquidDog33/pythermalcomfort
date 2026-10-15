@@ -544,7 +544,7 @@ def test_pmv_presets_reject_invalid_samples_with_filtering_guidance(value):
         SummaryPlot(pd.DataFrame({"pmv": [0, value]})).set_regions(preset="pmv_iso")
 
 
-@pytest.mark.parametrize("preset", ["pmv", "pmv_iss", "utci", ""])
+@pytest.mark.parametrize("preset", ["pmv", "pmv_iss", "utc", ""])
 def test_unknown_presets_list_supported_identifiers(pmv_df, preset):
     with pytest.raises(ValueError, match="Supported presets: pmv_iso, pmv_ashrae"):
         SummaryPlot(pmv_df).set_regions(preset=preset)
@@ -644,3 +644,196 @@ def test_preset_validates_samples_again_when_dataframe_is_changed():
     df.loc[0, "pmv"] = 10
     with pytest.raises(ValueError, match="unmapped"):
         builder.plot()
+
+
+@pytest.mark.parametrize(
+    ("boundary", "lower", "upper"),
+    [
+        (-40, "extreme cold stress", "very strong cold stress"),
+        (-27, "very strong cold stress", "strong cold stress"),
+        (-13, "strong cold stress", "moderate cold stress"),
+        (0, "moderate cold stress", "slight cold stress"),
+        (9, "slight cold stress", "no thermal stress"),
+        (26, "no thermal stress", "moderate heat stress"),
+        (32, "moderate heat stress", "strong heat stress"),
+        (38, "strong heat stress", "very strong heat stress"),
+        (46, "very strong heat stress", "extreme heat stress"),
+    ],
+)
+@pytest.mark.parametrize("units", ["SI", "ip"])
+def test_utci_preset_classifies_every_boundary(boundary, lower, upper, units):
+    if units == "ip":
+        boundary = boundary * 9 / 5 + 32
+    result = (
+        SummaryPlot(
+            pd.DataFrame({"utci": [boundary - 1e-8, boundary, boundary + 1e-8]})
+        )
+        .set_regions(preset="utci", units=units)
+        .plot()
+    )
+    assert result.percentages[lower] == 66.7
+    assert result.percentages[upper] == 33.3
+    assert (result.percentages == 0).sum() == 8
+
+
+@pytest.mark.parametrize(("units", "limit"), [("SI", 1000), ("IP", 1832)])
+def test_utci_preset_preserves_upper_classification_limit(units, limit):
+    df = pd.DataFrame({"utci": [float(limit)]})
+    builder = SummaryPlot(df).set_regions(preset="utci", units=units)
+    result = builder.plot()
+    assert result.percentages["extreme heat stress"] == 100
+    assert len(result.ax.patches) == 10
+    df.loc[0, "utci"] = limit + 1e-6
+    with pytest.raises(ValueError, match="unmapped.*Filter.*retained valid"):
+        builder.plot()
+    with pytest.raises(ValueError, match="unmapped.*Filter"):
+        builder.set_regions(preset="utci", units=units)
+
+
+UTCI_LABELS = [
+    "extreme cold stress",
+    "very strong cold stress",
+    "strong cold stress",
+    "moderate cold stress",
+    "slight cold stress",
+    "no thermal stress",
+    "moderate heat stress",
+    "strong heat stress",
+    "very strong heat stress",
+    "extreme heat stress",
+]
+
+
+def test_utci_presets_default_si_and_equivalent_ip_data():
+    values = [-45, -30, -20, -5, 5, 20, 30, 35, 40, 50]
+    df = pd.DataFrame({"utci": values, "fahrenheit": [v * 9 / 5 + 32 for v in values]})
+    si = SummaryPlot(df).set_regions(preset="utci").plot()
+    ip = (
+        SummaryPlot(df)
+        .set_regions(preset=" UTCI ", units="iP", output="fahrenheit")
+        .plot()
+    )
+    assert si.percentages.index.tolist() == UTCI_LABELS
+    assert si.percentages.tolist() == [10] * 10
+    pd.testing.assert_series_equal(si.percentages, ip.percentages)
+    assert [p.get_facecolor() for p in si.ax.patches] == [
+        p.get_facecolor() for p in ip.ax.patches
+    ]
+    # Declaring units never transforms or guesses the supplied data.
+    unchanged = (
+        SummaryPlot(pd.DataFrame({"utci": [26]}))
+        .set_regions(preset="utci", units="IP")
+        .plot()
+    )
+    assert unchanged.percentages["moderate cold stress"] == 100
+
+
+def test_utci_preset_presentation_and_configuration_switching():
+    from matplotlib.colors import to_rgba
+
+    df = pd.DataFrame({"utci": [26], "pmv": [0.5]})
+    builder = SummaryPlot(df)
+    default = builder.set_regions(preset="utci").plot()
+    labels = [f"Region {i}" for i in range(10)]
+    colors = [
+        "navy",
+        "blue",
+        "cyan",
+        "teal",
+        "green",
+        "white",
+        "yellow",
+        "orange",
+        "red",
+        "black",
+    ]
+    assert builder.set_regions(preset="utci", labels=labels, colors=colors) is builder
+    result = builder.plot()
+    assert result.percentages.index.tolist() == labels
+    assert result.percentages.tolist() == [0] * 5 + [100] + [0] * 4
+    assert [p.get_facecolor() for p in result.ax.patches] == [
+        to_rgba(c) for c in colors
+    ]
+    assert [t.get_text() for t in result.legend.get_texts()] == labels
+    fresh = SummaryPlot(df).set_regions(preset="utci").plot()
+    assert [p.get_facecolor() for p in fresh.ax.patches] == [
+        p.get_facecolor() for p in default.ax.patches
+    ]
+    assert (
+        builder.set_regions(preset="utci", labels=[]).plot().percentages.index.tolist()
+        == [""] * 10
+    )
+    assert (
+        builder.set_regions(preset="pmv_iso").plot().percentages["Slightly Warm"] == 100
+    )
+    assert (
+        builder.set_regions(preset="utci").plot().percentages["no thermal stress"]
+        == 100
+    )
+    custom = builder.set_regions(
+        output="utci", thresholds=[26], labels=["low", "high"]
+    ).plot()
+    assert custom.percentages.tolist() == [0, 100]
+    builder.set_categories(["original"], labels=["original"], colors=["red"])
+    assert builder.plot().percentages.to_dict() == {"original": 100}
+    assert (
+        builder.set_regions(preset="utci", units="IP")
+        .plot()
+        .percentages["moderate cold stress"]
+        == 100
+    )
+    builder.set_categories(["original"], labels=["original"], colors=["red"])
+    assert builder.plot().percentages.to_dict() == {"original": 100}
+
+
+@pytest.mark.parametrize(
+    ("overrides", "message"),
+    [
+        ({"thresholds": [0]}, "explicit thresholds"),
+        ({"units": "C"}, "SI.*IP"),
+        ({"units": 1}, "SI.*IP"),
+        ({"output": "missing"}, "not found"),
+        ({"labels": ["one"]}, "labels must have length 10"),
+        ({"colors": ["red"]}, "colors must have length 10"),
+        ({"colors": ["invalid"] * 10}, "Invalid color"),
+    ],
+)
+def test_utci_preset_rejects_invalid_configuration(overrides, message):
+    with pytest.raises(ValueError, match=message):
+        SummaryPlot(pd.DataFrame({"utci": [26]})).set_regions(
+            preset="utci", **overrides
+        )
+
+
+@pytest.mark.parametrize(
+    "value", [float("nan"), float("inf"), -float("inf"), "bad", None]
+)
+def test_utci_preset_rejects_invalid_samples(value):
+    with pytest.raises(ValueError, match="Filter.*retained valid"):
+        SummaryPlot(pd.DataFrame({"utci": [26, value]})).set_regions(preset="utci")
+
+
+def test_utci_preset_requires_default_column_without_numeric_fallback():
+    with pytest.raises(ValueError, match="'utci'.*not found"):
+        SummaryPlot(pd.DataFrame({"other": [26]})).set_regions(preset="utci")
+
+
+def test_rounded_utci_numeric_summary_and_original_categories_have_distinct_contracts():
+    # 26.049 and 26.051 C both display as 78.9 F, but round to 26.0 and 26.1 C
+    # for the model's classification (covered through the public UTCI model tests).
+    df = pd.DataFrame({"utci": [78.9, 78.9]})
+    numeric = SummaryPlot(df).set_regions(preset="utci", units="IP").plot()
+    assert numeric.percentages["moderate heat stress"] == 100
+    original = (
+        SummaryPlot(df)
+        .set_categories(
+            ["no thermal stress", "moderate heat stress"],
+            labels=["no thermal stress", "moderate heat stress"],
+            colors=["green", "orange"],
+        )
+        .plot()
+    )
+    assert original.percentages.to_dict() == {
+        "no thermal stress": 50,
+        "moderate heat stress": 50,
+    }

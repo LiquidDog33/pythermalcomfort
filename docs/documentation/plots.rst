@@ -121,6 +121,41 @@ numeric summary cannot generally recover categories from rounded output.
 Calling ``set_regions`` or ``set_categories`` replaces the preceding configuration.
 A runnable model example is included as ``examples/plot_summary_pmv_presets.py``.
 
+UTCI region preset
+~~~~~~~~~~~~~~~~~~
+
+Use ``SummaryPlot(df).set_regions(preset="utci").plot()`` to summarize the
+``utci`` column in ten ordered categories, from extreme cold stress through
+no thermal stress to extreme heat stress. The Celsius boundaries are -40, -27,
+-13, 0, 9, 26, 32, 38, and 46, all right-closed: exactly 26 degrees Celsius
+belongs to no thermal stress. Supplied values are classified without extra rounding.
+
+Units default to SI (Celsius). Set ``units="IP"`` for Fahrenheit data; unit names
+ignore case. Only thresholds and the upper classification bound are converted:
+the caller supplies data in the declared units. No units are inferred and no
+input data are converted. UTCI rejects values above 1000 degrees Celsius or
+1832 degrees Fahrenheit, without adding an extra region or checking environmental
+input applicability. Filter invalid and unmapped samples explicitly; percentages
+describe the retained valid samples.
+
+Names ignore surrounding whitespace and case. Override ``output``, or provide ten
+``labels`` and ``colors``; ``labels=[]`` suppresses labels. The existing palette
+for ten regions is reused. Common preset validation and configuration replacement
+rules also apply to UTCI.
+
+.. code-block:: python
+
+    df = pd.DataFrame({"utci": [32.0, 78.8, 89.6]})  # Fahrenheit data
+    summary = SummaryPlot(df).set_regions(preset="utci", units="IP").plot()
+
+UTCI classifies a separately rounded Celsius value. For example, unrounded UTCI
+values 26.049 and 26.051 degrees Celsius both display as 78.9 degrees Fahrenheit,
+but the model's rounded Celsius values are 26.0 and 26.1, giving no thermal stress
+and moderate heat stress. A numeric IP preset classifies both supplied 78.9 values
+as moderate heat stress. Use ``set_categories(result.stress_category, ...)`` with
+matching retained rows to preserve the original assignments. See the runnable
+SI/IP and category-summary example ``examples/plot_summary_utci_presets.py``.
+
 .. autoclass:: pythermalcomfort.plots.matplotlib.SummaryPlot
     :members: __init__, set_regions, set_categories, plot
     :member-order: bysource

@@ -7,6 +7,42 @@ from pythermalcomfort.psychrometrics import p_sat
 from tests.conftest import Urls, retrieve_reference_table, validate_result
 
 
+def test_utci_ip_rounding_can_hide_different_original_categories() -> None:
+    from scipy.optimize import brentq
+
+    temperatures = [
+        brentq(
+            lambda t, target=target: (
+                utci(tdb=t, tr=t, v=1, rh=50, round_output=False).utci - target
+            ),
+            25,
+            28,
+        )
+        for target in (26.049, 26.051)
+    ]
+    raw = utci(tdb=temperatures, tr=temperatures, v=1, rh=50, round_output=False)
+    np.testing.assert_allclose(raw.utci, [26.049, 26.051], atol=1e-10)
+    si = utci(tdb=temperatures, tr=temperatures, v=1, rh=50)
+    fahrenheit = np.asarray(temperatures) * 9 / 5 + 32
+    ip = utci(tdb=fahrenheit, tr=fahrenheit, v=3.281, rh=50, units="IP")
+    np.testing.assert_array_equal(si.utci, [26.0, 26.1])
+    np.testing.assert_array_equal(ip.utci, [78.9, 78.9])
+    np.testing.assert_array_equal(
+        si.stress_category, ["no thermal stress", "moderate heat stress"]
+    )
+    np.testing.assert_array_equal(ip.stress_category, si.stress_category)
+    raw_ip = utci(
+        tdb=fahrenheit, tr=fahrenheit, v=3.281, rh=50, units="IP", round_output=False
+    )
+    np.testing.assert_allclose(raw_ip.utci, [78.8882, 78.8918], atol=1e-10)
+    np.testing.assert_array_equal(raw_ip.stress_category, ["moderate heat stress"] * 2)
+    scalar = utci(
+        tdb=float(fahrenheit[0]), tr=float(fahrenheit[0]), v=3.281, rh=50, units="IP"
+    )
+    assert scalar.utci == 78.9
+    assert scalar.stress_category == "no thermal stress"
+
+
 def test_utci(get_test_url, retrieve_data) -> None:
     """Test that the UTCI function calculates correctly for various inputs."""
     reference_table = retrieve_reference_table(

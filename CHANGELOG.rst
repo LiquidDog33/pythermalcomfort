@@ -4,6 +4,11 @@ Changelog
 Unreleased
 ----------
 
+* Added the ``SummaryPlot.set_regions(preset="utci")`` preset for all ten UTCI
+  thermal stress categories, with right-closed boundaries, explicit SI/IP data
+  units, presentation overrides, and the model's finite classification limit.
+  Shared UTCI classification definitions preserve existing model output behavior.
+
 * Added ``SummaryPlot.set_regions(preset="pmv_iso")`` and ``preset="pmv_ashrae"``
   for seven-category PMV thermal sensation summaries, preserving each model's
   boundary inclusion and finite classification limits. Presets default to the
