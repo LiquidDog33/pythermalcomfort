@@ -4,6 +4,11 @@ Changelog
 Unreleased
 ----------
 
+* Added ``SummaryPlot`` region presets ``heat_index_rothfusz`` and
+  ``heat_index_schoen`` for five Heat Index risk categories, with SI/IP data units,
+  presentation overrides, and finite classification limits. Models and plots
+  share classification definitions while preserving classification before rounding.
+
 * Added the ``SummaryPlot.set_regions(preset="utci")`` preset for all ten UTCI
   thermal stress categories, with right-closed boundaries, explicit SI/IP data
   units, presentation overrides, and the model's finite classification limit.

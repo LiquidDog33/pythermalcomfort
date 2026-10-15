@@ -77,6 +77,29 @@ categories differ. Use `set_categories(result.stress_category, ...)` to retain
 those assignments. See `examples/plot_summary_utci_presets.py` for SI/IP plots,
 filtering, presentation overrides, and original category summaries.
 
+## Heat Index summary presets
+
+`SummaryPlot(df).set_regions(preset="heat_index_rothfusz").plot()` and
+`preset="heat_index_schoen"` default to the `hi` column. Both provide five ordered
+categories: no risk, caution, extreme caution, danger, extreme danger, with Celsius
+transitions 27, 32, 41, 54. Boundaries are right-closed: 32 is caution. Names ignore
+case and surrounding whitespace; `hi` is not an alias. Override `output`, `labels`
+and `colors` as needed, or use the existing five-region palette.
+
+SI is the default. Current HI models return Celsius; `units="IP"` requires
+caller-supplied Fahrenheit values. Only thresholds and the upper bound are
+converted. The bound (1000 C / 1832 F) is included in extreme danger; higher values
+raise with filtering guidance. Filter nonnumeric, missing, nonfinite and unmapped
+samples explicitly. Percentages describe retained valid samples: five retained
+observations out of six original samples each contribute 20 percent.
+
+Models classify before one-decimal display rounding. HI 31.99 and 32.01 C have
+categories caution and extreme caution, but both display as 32.0. Numeric presets
+classify supplied 32.0 values as caution without further rounding. Use
+`set_categories(result.stress_category, labels=..., colors=...)` to preserve the
+original assignments. See `examples/plot_summary_heat_index_presets.py` for both
+models, explicit SI/IP conversion, overrides, filtering and category summaries.
+
 ## How `ThresholdPlot` draws its boundaries
 
 Every boundary is solved by bisection, one row of the plot at a time: where the

@@ -114,3 +114,26 @@ def test_category_rounding_with_broadcast_and_invalid_input(round_output) -> Non
     )
     assert np.isnan(result.hi[3])
     assert np.isnan(result.stress_category[3])
+
+
+def test_same_rounded_display_retains_distinct_original_categories() -> None:
+    """One-decimal displays lose the category distinction across 32 C."""
+    from scipy.optimize import brentq
+
+    temperatures = [
+        brentq(
+            lambda tdb, target=target: (
+                heat_index_rothfusz(tdb=tdb, rh=50, round_output=False).hi.item()
+                - target
+            ),
+            30,
+            31,
+        )
+        for target in [31.99, 32.01]
+    ]
+    raw = heat_index_rothfusz(tdb=temperatures, rh=50, round_output=False)
+    rounded = heat_index_rothfusz(tdb=temperatures, rh=50)
+    np.testing.assert_allclose(raw.hi, [31.99, 32.01], atol=1e-8)
+    np.testing.assert_array_equal(rounded.hi, [32.0, 32.0])
+    np.testing.assert_array_equal(raw.stress_category, ["caution", "extreme caution"])
+    np.testing.assert_array_equal(rounded.stress_category, raw.stress_category)

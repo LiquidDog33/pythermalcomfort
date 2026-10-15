@@ -837,3 +837,178 @@ def test_rounded_utci_numeric_summary_and_original_categories_have_distinct_cont
         "no thermal stress": 50,
         "moderate heat stress": 50,
     }
+
+
+@pytest.mark.parametrize("preset", ["heat_index_rothfusz", "heat_index_schoen"])
+@pytest.mark.parametrize(
+    ("boundary", "lower", "upper"),
+    [
+        (27, "no risk", "caution"),
+        (32, "caution", "extreme caution"),
+        (41, "extreme caution", "danger"),
+        (54, "danger", "extreme danger"),
+    ],
+)
+@pytest.mark.parametrize("units", ["sI", "ip"])
+def test_heat_index_preset_classifies_every_boundary(
+    preset, boundary, lower, upper, units
+):
+    if units == "ip":
+        boundary = boundary * 9 / 5 + 32
+    result = (
+        SummaryPlot(pd.DataFrame({"hi": [boundary - 1e-8, boundary, boundary + 1e-8]}))
+        .set_regions(preset=preset, units=units)
+        .plot()
+    )
+    assert result.percentages[lower] == 66.7
+    assert result.percentages[upper] == 33.3
+    assert (result.percentages == 0).sum() == 3
+
+
+HI_LABELS = ["no risk", "caution", "extreme caution", "danger", "extreme danger"]
+HI_PRESETS = ["heat_index_rothfusz", "heat_index_schoen"]
+
+
+@pytest.mark.parametrize("preset", HI_PRESETS)
+@pytest.mark.parametrize(("units", "limit"), [("SI", 1000), ("IP", 1832)])
+def test_heat_index_preset_upper_limit(preset, units, limit):
+    df = pd.DataFrame({"hi": [float(limit)]})
+    builder = SummaryPlot(df).set_regions(preset=preset, units=units)
+    result = builder.plot()
+    assert result.percentages.to_dict() == dict(
+        zip(HI_LABELS, [0, 0, 0, 0, 100], strict=True)
+    )
+    assert len(result.ax.patches) == 5
+    df.loc[0, "hi"] = limit + 1e-6
+    with pytest.raises(ValueError, match="unmapped.*Filter.*retained valid"):
+        builder.plot()
+    with pytest.raises(ValueError, match="unmapped.*Filter"):
+        builder.set_regions(preset=preset, units=units)
+
+
+@pytest.mark.parametrize("preset", HI_PRESETS)
+def test_heat_index_preset_units_and_presentation(preset):
+    from matplotlib.colors import to_rgba
+
+    df = pd.DataFrame(
+        {"hi": [20, 30, 35, 45, 60], "fahrenheit": [68, 86, 95, 113, 140]}
+    )
+    si = SummaryPlot(df).set_regions(preset=preset).plot()
+    ip = (
+        SummaryPlot(df)
+        .set_regions(preset=f" {preset.upper()} ", units="iP", output="fahrenheit")
+        .plot()
+    )
+    assert si.percentages.index.tolist() == HI_LABELS
+    assert si.percentages.tolist() == [20] * 5
+    pd.testing.assert_series_equal(si.percentages, ip.percentages)
+    assert [p.get_facecolor() for p in si.ax.patches] == [
+        p.get_facecolor() for p in ip.ax.patches
+    ]
+    labels = ["Safe", "Mild", "Elevated", "High", "Severe"]
+    colors = ["green", "yellow", "orange", "red", "black"]
+    builder = SummaryPlot(df)
+    assert builder.set_regions(preset=preset, labels=labels, colors=colors) is builder
+    custom = builder.plot()
+    assert custom.percentages.index.tolist() == labels
+    assert custom.percentages.tolist() == [20] * 5
+    assert [t.get_text() for t in custom.legend.get_texts()] == labels
+    assert [p.get_facecolor() for p in custom.ax.patches] == [
+        to_rgba(c) for c in colors
+    ]
+    fresh = SummaryPlot(df).set_regions(preset=preset).plot()
+    assert [p.get_facecolor() for p in fresh.ax.patches] == [
+        p.get_facecolor() for p in si.ax.patches
+    ]
+    assert (
+        builder.set_regions(preset=preset, labels=[]).plot().percentages.index.tolist()
+        == [""] * 5
+    )
+    # The units declaration changes thresholds only, never the supplied Celsius values.
+    unchanged = SummaryPlot(df).set_regions(preset=preset, units="IP").plot()
+    assert unchanged.percentages["no risk"] == 100
+
+
+@pytest.mark.parametrize("preset", HI_PRESETS)
+def test_heat_index_preset_switches_configuration(preset):
+    builder = SummaryPlot(pd.DataFrame({"hi": [32], "pmv": [0.5]}))
+    for other in [preset, "pmv_iso", *HI_PRESETS]:
+        result = builder.set_regions(preset=other).plot()
+        assert (
+            result.percentages["Slightly Warm" if other == "pmv_iso" else "caution"]
+            == 100
+        )
+    custom = builder.set_regions(
+        output="hi", thresholds=[32], labels=["low", "high"]
+    ).plot()
+    assert custom.percentages.tolist() == [0, 100]
+    builder.set_categories(["original"], labels=["original"], colors=["red"])
+    assert builder.plot().percentages.to_dict() == {"original": 100}
+    assert builder.set_regions(preset=preset).plot().percentages["caution"] == 100
+    builder.set_categories(["original"], labels=["original"], colors=["red"])
+    assert builder.plot().percentages.to_dict() == {"original": 100}
+
+
+@pytest.mark.parametrize("preset", HI_PRESETS)
+@pytest.mark.parametrize(
+    ("overrides", "message"),
+    [
+        ({"thresholds": [0]}, "explicit thresholds"),
+        ({"units": "C"}, "SI.*IP"),
+        ({"units": 1}, "SI.*IP"),
+        ({"output": "missing"}, "not found"),
+        ({"labels": ["one"]}, "labels must have length 5"),
+        ({"colors": ["red"]}, "colors must have length 5"),
+        ({"colors": ["invalid"] * 5}, "Invalid color"),
+    ],
+)
+def test_heat_index_preset_rejects_invalid_configuration(preset, overrides, message):
+    with pytest.raises(ValueError, match=message):
+        SummaryPlot(pd.DataFrame({"hi": [32]})).set_regions(preset=preset, **overrides)
+
+
+@pytest.mark.parametrize("preset", HI_PRESETS)
+@pytest.mark.parametrize(
+    "value", [float("nan"), float("inf"), -float("inf"), "bad", None]
+)
+def test_heat_index_preset_rejects_invalid_samples(preset, value):
+    with pytest.raises(ValueError, match="Filter.*retained valid"):
+        SummaryPlot(pd.DataFrame({"hi": [32, value]})).set_regions(preset=preset)
+
+
+@pytest.mark.parametrize("preset", HI_PRESETS)
+def test_heat_index_preset_requires_hi_column(preset):
+    with pytest.raises(ValueError, match="'hi'.*not found"):
+        SummaryPlot(pd.DataFrame({"other": [32]})).set_regions(preset=preset)
+
+
+def test_heat_index_alias_is_ambiguous():
+    with pytest.raises(
+        ValueError, match="Unknown preset.*heat_index_rothfusz.*heat_index_schoen"
+    ):
+        SummaryPlot(pd.DataFrame({"hi": [32]})).set_regions(preset="hi")
+
+
+@pytest.mark.parametrize("preset", HI_PRESETS)
+def test_heat_index_rounded_outputs_and_original_categories(preset):
+    df = pd.DataFrame({"hi": [32.0, 32.0]})
+    numeric = SummaryPlot(df).set_regions(preset=preset).plot()
+    assert numeric.percentages["caution"] == 100
+    original = (
+        SummaryPlot(df)
+        .set_categories(
+            ["caution", "extreme caution"],
+            labels=HI_LABELS,
+            colors=["green", "yellow", "orange", "red", "black"],
+        )
+        .plot()
+    )
+    assert original.percentages.tolist() == [0, 50, 50, 0, 0]
+    unrounded = (
+        SummaryPlot(pd.DataFrame({"hi": [31.99, 32.01]}))
+        .set_regions(preset=preset)
+        .plot()
+    )
+    pd.testing.assert_series_equal(
+        unrounded.percentages, original.percentages, check_names=False
+    )

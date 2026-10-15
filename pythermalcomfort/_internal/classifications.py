@@ -49,3 +49,9 @@ UTCI_CLASSIFICATION = _OutputClassification(
     ),
     right=True,
 )
+
+HEAT_INDEX_CLASSIFICATION = _OutputClassification(
+    upper_bounds=(27.0, 32.0, 41.0, 54.0, 1000.0),
+    labels=("no risk", "caution", "extreme caution", "danger", "extreme danger"),
+    right=True,
+)

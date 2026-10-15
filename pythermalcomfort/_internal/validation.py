@@ -166,17 +166,6 @@ def _finalize_scalar_or_array(arr: Any) -> Any:
     return arr
 
 
-# Stress category thresholds shared by the Heat Index models (e.g. Rothfusz, Schoen).
-# Each model prepends its own "no risk" floor, since that lower bound depends on the
-# model's applicability range, e.g. {27.0: "no risk", **HEAT_INDEX_STRESS_CATEGORIES}.
-HEAT_INDEX_STRESS_CATEGORIES = {
-    32.0: "caution",
-    41.0: "extreme caution",
-    54.0: "danger",
-    1000.0: "extreme danger",
-}
-
-
 def _mapping(
     value: float | np.ndarray, map_dictionary: Mapping[float, Any], right: bool = True
 ) -> np.ndarray:

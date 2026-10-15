@@ -17,6 +17,7 @@ from matplotlib.legend import Legend
 from matplotlib.patches import Patch
 
 from pythermalcomfort._internal.classifications import (
+    HEAT_INDEX_CLASSIFICATION,
     PMV_ASHRAE_CLASSIFICATION,
     PMV_ISO_CLASSIFICATION,
     UTCI_CLASSIFICATION,
@@ -38,6 +39,8 @@ _REGION_PRESETS = {
     "pmv_iso": ("pmv", PMV_ISO_CLASSIFICATION),
     "pmv_ashrae": ("pmv", PMV_ASHRAE_CLASSIFICATION),
     "utci": ("utci", UTCI_CLASSIFICATION),
+    "heat_index_rothfusz": ("hi", HEAT_INDEX_CLASSIFICATION),
+    "heat_index_schoen": ("hi", HEAT_INDEX_CLASSIFICATION),
 }
 
 
@@ -447,8 +450,8 @@ class SummaryPlot(BasePlot):
         ----------
         output : str, optional
             Name of the DataFrame column to categorize. Defaults to ``pmv``
-            for either PMV preset, or ``utci`` for the UTCI preset;
-            required for custom thresholds.
+            for either PMV preset, ``utci`` for UTCI, or ``hi`` for either
+            Heat Index preset; required for custom thresholds.
         thresholds : sequence of float, optional
             Numeric boundaries for custom, left-closed regions. Required
             without a preset; cannot be combined with a preset.
@@ -459,20 +462,26 @@ class SummaryPlot(BasePlot):
             Region colors.  Must have length ``len(thresholds) + 1`` when
             provided. Presets reuse the existing palette for their region count.
         preset : str, optional
-            ``pmv_iso``, ``pmv_ashrae``, or ``utci``. Names ignore case and surrounding
+            ``pmv_iso``, ``pmv_ashrae``, ``utci``, ``heat_index_rothfusz``, or
+            ``heat_index_schoen``. Names ignore case and surrounding
             whitespace. The PMV presets classify seven thermal sensation categories:
             Cold, Cool, Slightly Cool, Neutral, Slightly Warm, Warm, Hot.
             Their six boundaries are -2.5, -1.5, -0.5, 0.5, 1.5, 2.5.
             ISO includes the left edge; ASHRAE includes the right edge.
             UTCI has ten thermal stress categories with right-closed Celsius
             boundaries -40, -27, -13, 0, 9, 26, 32, 38, 46.
-            Labels and colors can override the preset presentation.
+            Both Heat Index presets have five right-closed risk categories with
+            Celsius boundaries 27, 32, 41, 54: no risk, caution, extreme caution,
+            danger, extreme danger. Labels and colors can override presentation.
         units : str, optional
             Preset data units, ``SI`` (default) or ``IP``, ignoring case.
             PMV is dimensionless, so either leaves its boundaries unchanged.
-            UTCI uses Celsius for SI and Fahrenheit for IP: thresholds and the
-            upper classification bound are converted, never the supplied data.
-            Only accepted with a preset; custom thresholds are never converted.
+            UTCI and Heat Index use Celsius for SI and Fahrenheit for IP:
+            thresholds and the upper classification bound are converted,
+            never the supplied data.
+            Current Heat Index models return Celsius; IP callers must supply
+            Fahrenheit values. Only accepted with a preset; custom thresholds
+            are never converted.
 
         Returns
         -------
@@ -493,8 +502,9 @@ class SummaryPlot(BasePlot):
         Thermal sensation is distinct from comfort-standard compliance. Presets
         classify supplied values directly, without rounding or checking environmental
         input applicability. ISO rejects PMV >= 10; ASHRAE rejects PMV > 10, matching
-        the models' finite classification limits. UTCI rejects values > 1000 degrees
-        Celsius (1832 degrees Fahrenheit). These limits add no plotted region.
+        the models' finite classification limits. UTCI and Heat Index reject values
+        > 1000 degrees Celsius (1832 degrees Fahrenheit). These limits add no
+        plotted region.
 
         Filter nonnumeric, missing, nonfinite, and unmapped samples before calling
         this method. No rows are silently dropped: percentages describe the retained
@@ -502,7 +512,9 @@ class SummaryPlot(BasePlot):
         categories when the original assignments must be preserved, since a model's
         rounding and classification order can affect categories. UTCI classifies
         separately rounded Celsius values; rounded Fahrenheit values cannot always
-        recover the original categories.
+        recover the original categories. Heat Index models classify before rounding
+        their displayed Celsius values, so 31.99 and 32.01 both display as 32.0
+        but retain caution and extreme caution respectively.
 
         Examples
         --------
@@ -530,7 +542,11 @@ class SummaryPlot(BasePlot):
             ):
                 raise ValueError("units must be 'SI' or 'IP' for a preset.")
             default_output, classification = _REGION_PRESETS[name]
-            if name == "utci" and units is not None and units.upper() == "IP":
+            if (
+                default_output in {"utci", "hi"}
+                and units is not None
+                and units.upper() == "IP"
+            ):
                 classification = _OutputClassification(
                     upper_bounds=tuple(
                         units_converter(from_units="SI", tmp=bound)[0]

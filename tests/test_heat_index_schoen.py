@@ -118,3 +118,25 @@ def test_invalid_inputs_raise_specific(tdb, rh, expected_error) -> None:
     """Test that invalid input types and humidity values raise errors."""
     with pytest.raises(expected_error):
         heat_index_schoen(tdb=tdb, rh=rh)
+
+
+def test_same_rounded_display_retains_distinct_original_categories() -> None:
+    """One-decimal displays lose the category distinction across 32 C."""
+    from scipy.optimize import brentq
+
+    temperatures = [
+        brentq(
+            lambda tdb, target=target: (
+                heat_index_schoen(tdb=tdb, rh=50, round_output=False).hi.item() - target
+            ),
+            30,
+            31,
+        )
+        for target in [31.99, 32.01]
+    ]
+    raw = heat_index_schoen(tdb=temperatures, rh=50, round_output=False)
+    rounded = heat_index_schoen(tdb=temperatures, rh=50)
+    np.testing.assert_allclose(raw.hi, [31.99, 32.01], atol=1e-8)
+    np.testing.assert_array_equal(rounded.hi, [32.0, 32.0])
+    np.testing.assert_array_equal(raw.stress_category, ["caution", "extreme caution"])
+    np.testing.assert_array_equal(rounded.stress_category, raw.stress_category)

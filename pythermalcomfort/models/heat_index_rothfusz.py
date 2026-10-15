@@ -7,8 +7,8 @@ import numpy as np
 from numba import float64, vectorize
 from numpy.typing import NDArray
 
+from pythermalcomfort._internal.classifications import HEAT_INDEX_CLASSIFICATION
 from pythermalcomfort._internal.validation import (
-    HEAT_INDEX_STRESS_CATEGORIES,
     _mapping,
     _valid_range,
 )
@@ -80,8 +80,11 @@ def heat_index_rothfusz(
     else:
         hi_valid = hi
 
-    heat_index_categories = {27.0: "no risk", **HEAT_INDEX_STRESS_CATEGORIES}
-    stress_category = _mapping(hi_valid, heat_index_categories)
+    stress_category = _mapping(
+        value=hi_valid,
+        map_dictionary=HEAT_INDEX_CLASSIFICATION.mapping,
+        right=HEAT_INDEX_CLASSIFICATION.right,
+    )
 
     if round_output:
         hi_valid = np.around(hi_valid, 1)

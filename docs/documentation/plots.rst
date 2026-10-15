@@ -156,6 +156,39 @@ as moderate heat stress. Use ``set_categories(result.stress_category, ...)`` wit
 matching retained rows to preserve the original assignments. See the runnable
 SI/IP and category-summary example ``examples/plot_summary_utci_presets.py``.
 
+Heat Index region presets
+~~~~~~~~~~~~~~~~~~~~~~~~~
+
+Use ``SummaryPlot(df).set_regions(preset="heat_index_rothfusz").plot()`` or
+``preset="heat_index_schoen"`` for the corresponding model's ``hi`` column.
+Both presets use the five ordered categories no risk, caution, extreme caution,
+danger, extreme danger. Celsius transitions are 27, 32, 41, 54, with right-closed
+intervals: exactly 32 belongs to caution. Names ignore case and surrounding
+whitespace; there is no ambiguous ``hi`` alias. The existing five-region palette
+is used, and ``output``, ``labels`` and ``colors`` can be overridden.
+
+SI is the default. Both current HI models return Celsius. For ``units="IP"``,
+callers must supply Fahrenheit data, converting it explicitly if needed using
+``units_converter(from_units="SI", tmp=values)[0]``. Only thresholds and the
+upper classification limit are converted; input data are never converted or
+inferred. The upper limit, 1000 degrees Celsius or 1832 degrees Fahrenheit,
+belongs to extreme danger; higher values raise an error and add no region.
+
+Filter nonnumeric, missing, nonfinite and unmapped samples explicitly before
+plotting. After filtering, percentages describe the retained valid samples.
+For example, retaining five valid observations from six samples makes each
+retained observation worth 20 percent. Presets do not reconstruct a model's
+environmental applicability limits from its output.
+
+Both models classify before rounding their displayed HI to one decimal.
+Unrounded HI values 31.99 and 32.01 degrees Celsius therefore have different
+categories (caution and extreme caution), while both display as 32.0.
+A numeric preset assigns both supplied 32.0 values to caution without extra
+rounding. To retain the original assignments, use ``set_categories()`` with
+``result.stress_category``. See ``examples/plot_summary_heat_index_presets.py``
+for runnable examples of both models, SI/IP data, presentation overrides,
+explicit filtering and exact category summaries.
+
 .. autoclass:: pythermalcomfort.plots.matplotlib.SummaryPlot
     :members: __init__, set_regions, set_categories, plot
     :member-order: bysource
